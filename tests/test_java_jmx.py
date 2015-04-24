@@ -12,7 +12,9 @@ from aggregator import MetricsAggregator
 from dogstatsd import Server
 from util import PidFile
 from jmxfetch import JMXFetch
+from checks.check_status import get_jmx_status
 from common import AgentCheckTest
+from config import get_jmx_status_path
 
 # 3rd party
 import yaml
@@ -93,6 +95,32 @@ class JMXInitTest(AgentCheckTest):
 
         jmx_conf = self._get_jmx_conf("-XX:MaxHeapSize=500m")
         self.assertJavaRunsWith(jmx_conf, ['-Xms50m', '-XX:MaxHeapSize=500m'], ['-Xmx200m'])
+
+    def test_jmx_sc_counter(self):
+        # We call this function just to start JMXFetch
+        self._get_jmxfetch_subprocess_args(self._get_jmx_conf("-XX:MaxHeapSize=500m"))
+        timeout = 10
+        start_time = time.time()
+        jmx_status_path = os.path.join(get_jmx_status_path(), "jmx_status.yaml")
+
+        # We wait (the shortest amount of time possible) for the status file to be created 
+        # by jmxfetch.
+        while not os.path.exists(jmx_status_path) or time.time() - start_time < timeout:
+            time.sleep(1)
+
+        # Testing that we have one (and only one) service check in our status
+        check_name = "jmx"
+
+        jmx_statuses = get_jmx_status()
+
+        found = False
+        print(str(jmx_statuses))
+        for status in jmx_statuses:
+            if status.name == check_name:
+                found = True
+                self.assertEquals(1, status.service_check_count)
+        
+        self.assertTrue(found)      
 
 
 @attr(requires='tomcat')
